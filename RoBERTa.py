@@ -1,36 +1,28 @@
-path='../config_dataset/data/qt/cc2vec/qt_train.pkl'
+path = '../config_dataset/data/qt/cc2vec/qt_train.pkl'
 
-import pickle
-import os
-import sys
-import torch.nn as nn
-
-import torch.nn as nn
-import torch
-import torch.nn.functional as F
-
-from transformers import BartModel,BartTokenizer,BartConfig,AutoModelForSequenceClassification,AutoTokenizer,RobertaModel,RobertaTokenizer,RobertaConfig
-
-from untils import CustomDataset
-from torch.utils.data import DataLoader
-
-
-from tqdm import tqdm
-import numpy as np
-import math
-import os, torch
-import random
-import csv
 import argparse
+import csv
+import math
+import os
+import pickle
+import random
 import time
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from tqdm import tqdm
+from transformers import AutoTokenizer, RobertaModel
+
 batch_size = 16
 from sklearn.metrics import roc_auc_score
+
 
 class BART4JIT(nn.Module):
     def __init__(self, args):
         super(BART4JIT, self).__init__()
         self.args = args
-
 
         V_msg = args.vocab_msg
         V_code = args.vocab_code
@@ -60,14 +52,10 @@ class BART4JIT(nn.Module):
         # self.num_layers_reinit = args.num_layers_reinit
 
         # CodeBERT model
-        self.sentence_encoder =RobertaModel.from_pretrained("roberta-base", num_labels=args.class_num)
-
-
-
+        self.sentence_encoder = RobertaModel.from_pretrained("roberta-base", num_labels=args.class_num)
 
     def forward(self, msg_input_ids, msg_input_mask, code_input_ids, code_input_mask,
                 ):
-
         # --------CodeBERT for msg------------
         msg_encoded = list()
         msg_encoded.append(self.sentence_encoder(input_ids=msg_input_ids, attention_mask=msg_input_mask)[1])
@@ -105,6 +93,8 @@ class BART4JIT(nn.Module):
         out = self.sigmoid(out).squeeze(1)
 
         return out
+
+
 def read_args():
     parser = argparse.ArgumentParser()
     # Training our model
@@ -138,7 +128,6 @@ def read_args():
     parser.add_argument('-save-dir', type=str, default='p_tuning_roberta/test/qt', help='where to save the snapshot')
     parser.add_argument('-zero_shot', action='store_true', help='zero shot learning')
 
-
     # CUDA
     parser.add_argument('-device', type=int, default=-1,
                         help='device to use for iterate data, -1 mean cpu [default: -1]')
@@ -155,7 +144,6 @@ def read_pickle(path):
     return data
 
 
-
 def convert_examples_to_features(examples, max_seq_length, tokenizer, print_examples=False):
     """
     Tokenization and padding for one sentence ( for commit msg )
@@ -166,23 +154,20 @@ def convert_examples_to_features(examples, max_seq_length, tokenizer, print_exam
     features_segments = []
     index = 0
     for (ex_index, example) in enumerate(examples):
-
         # if index>10:
         #     break
         # index+=1
 
-        tokens="[CLS] "+example+" [SEP]"
-
+        tokens = "[CLS] " + example + " [SEP]"
 
         tmp_result = tokenizer(tokens, padding='max_length', truncation=True, max_length=max_seq_length)
 
         # The mask has 1 for real tokens and 0 for padding tokens. Only real
         # tokens are attended to.
 
-        input_ids=tmp_result['input_ids']
-        input_mask=tmp_result['attention_mask']
-        segment_ids=[0]*len(input_ids)
-
+        input_ids = tmp_result['input_ids']
+        input_mask = tmp_result['attention_mask']
+        segment_ids = [0] * len(input_ids)
 
         features_inputs.append(input_ids)
         features_masks.append(input_mask)
@@ -200,7 +185,7 @@ def convert_examples_to_hierarchical_features(examples, max_seq_length, tokenize
     features_masks = []
     features_segments = []
     print(" max length for code tokenizer:", max_seq_length)
-    index=0
+    index = 0
     for (ex_index, example) in enumerate(examples):
 
         # if index>10:
@@ -214,16 +199,15 @@ def convert_examples_to_hierarchical_features(examples, max_seq_length, tokenize
             if len(line.strip()) == 0:
                 continue
             else:
-                tokens_a.append('[CLS] '+line+' [SEP]')
+                tokens_a.append('[CLS] ' + line + ' [SEP]')
                 num_file += 1
             if num_file >= 4:
                 break
-        while(num_file<4):
+        while (num_file < 4):
             tokens_a.append("empty patch")
-            num_file+=1
+            num_file += 1
         # print("------------num of files are affectd:", num_file)
         # Account for [CLS] and [SEP]
-
 
         tokens = tokens_a
         segment_ids = list()
@@ -235,7 +219,7 @@ def convert_examples_to_hierarchical_features(examples, max_seq_length, tokenize
         for line in tokens:
             # print("--------line before tokenizer------:", len(line))
 
-            tmp_result = tokenizer(line, max_length=max_seq_length,padding='max_length', truncation=True)
+            tmp_result = tokenizer(line, max_length=max_seq_length, padding='max_length', truncation=True)
             input_ids.append(tmp_result['input_ids'])
             input_mask.append(tmp_result['attention_mask'])
             segment_ids.append([0] * len(tmp_result['input_ids']))
@@ -264,7 +248,8 @@ def tokenization_for_codebert(data, max_length, flag, params):
     else:
         print(" the flag is wrong for the tokenization of CodeBERT ")
 
-def write_csv(path_dir,file_name, data):
+
+def write_csv(path_dir, file_name, data):
     print('save loss in file: ', file_name)
     if not os.path.isdir(path_dir):
         os.makedirs(path_dir)
@@ -278,6 +263,7 @@ def write_csv(path_dir,file_name, data):
             writer = csv.writer(f)
             writer.writerow(data)
 
+
 def save(model, save_dir, save_prefix, epochs, step_, step):
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
@@ -285,6 +271,8 @@ def save(model, save_dir, save_prefix, epochs, step_, step):
     save_path = '{}_{}_{}_{}.pt'.format(save_prefix, epochs, step_, step)
     print('path:', save_path)
     torch.save(model.state_dict(), save_path)
+
+
 def mini_batches(X_msg_input_ids, X_msg_masks, X_msg_segment_ids, X_code_input_ids, X_code_masks, X_code_segment_ids, Y,
                  mini_batch_size=64, seed=0):
     ''' for testing; put every data into it
@@ -316,8 +304,9 @@ def mini_batches(X_msg_input_ids, X_msg_masks, X_msg_segment_ids, X_code_input_i
         else:
             mini_batch_Y = shuffled_Y[k * mini_batch_size: k * mini_batch_size + mini_batch_size, :]
         mini_batch = (
-        mini_batch_X_msg_input_ids, mini_batch_X_msg_masks, mini_batch_X_msg_segment_ids, mini_batch_X_code_input_ids,
-        mini_batch_X_code_masks, mini_batch_X_code_segment_ids, mini_batch_Y)
+            mini_batch_X_msg_input_ids, mini_batch_X_msg_masks, mini_batch_X_msg_segment_ids,
+            mini_batch_X_code_input_ids,
+            mini_batch_X_code_masks, mini_batch_X_code_segment_ids, mini_batch_Y)
         mini_batches.append(mini_batch)
 
     return mini_batches
@@ -345,39 +334,41 @@ def mini_batches_updated(X_msg_input_ids, X_msg_masks, X_msg_segment_ids, X_code
 
         mini_batch_X_msg_input_ids = shuffled_X_msg_input_ids[indexes]
         mini_batch_X_msg_masks, mini_batch_X_msg_segment_ids = shuffled_X_msg_masks[indexes], \
-                                                               shuffled_X_msg_segment_ids[indexes]
+            shuffled_X_msg_segment_ids[indexes]
         mini_batch_X_code_input_ids, mini_batch_X_code_masks = shuffled_X_code_input_ids[indexes], \
-                                                               shuffled_X_code_masks[indexes]
+            shuffled_X_code_masks[indexes]
         mini_batch_X_code_segment_ids = shuffled_X_code_segment_ids[indexes]
 
         mini_batch_Y = shuffled_Y[indexes]
         mini_batch = (
-        mini_batch_X_msg_input_ids, mini_batch_X_msg_masks, mini_batch_X_msg_segment_ids, mini_batch_X_code_input_ids,
-        mini_batch_X_code_masks, mini_batch_X_code_segment_ids, mini_batch_Y)
+            mini_batch_X_msg_input_ids, mini_batch_X_msg_masks, mini_batch_X_msg_segment_ids,
+            mini_batch_X_code_input_ids,
+            mini_batch_X_code_masks, mini_batch_X_code_segment_ids, mini_batch_Y)
 
         mini_batches.append(mini_batch)
     return mini_batches
+
+
 def train_model(data, params):
     # preprocess on the code and msg data
 
-    data_pad_msg, data_pad_code, data_labels,dict_msg,dict_code = data
+    data_pad_msg, data_pad_code, data_labels, dict_msg, dict_code = data
     pad_msg_input_ids, pad_msg_input_masks, pad_msg_segment_ids = data_pad_msg
     pad_code_input_ids, pad_code_input_masks, pad_code_segment_ids = data_pad_code
 
     pad_msg_input_ids = np.array(pad_msg_input_ids)
     pad_msg_input_masks = np.array(pad_msg_input_masks)
     pad_msg_segment_ids = np.array(pad_msg_segment_ids)
-    print("pad_msg_input_ids",pad_msg_input_ids.shape)
-    print("pad_msg_input_masks",pad_msg_input_masks.shape)
+    print("pad_msg_input_ids", pad_msg_input_ids.shape)
+    print("pad_msg_input_masks", pad_msg_input_masks.shape)
 
     # pad the code changes data to num of files
-
 
     pad_code_input_ids = np.array(pad_code_input_ids)
     pad_code_input_masks = np.array(pad_code_input_masks)
     pad_code_segment_ids = np.array(pad_code_segment_ids)
-    print("pad_code_input_ids",pad_code_input_ids.shape)
-    print("pad_code_input_masks",pad_code_input_masks.shape)
+    print("pad_code_input_ids", pad_code_input_ids.shape)
+    print("pad_code_input_masks", pad_code_input_masks.shape)
 
     # set up parameters
     params.cuda = (not params.no_cuda) and torch.cuda.is_available()
@@ -400,10 +391,9 @@ def train_model(data, params):
         model.load_state_dict(torch.load(params.load_model))
 
     criterion = nn.BCELoss()
-    Adam_optimizer= torch.optim.Adam(model.parameters(), lr=params.l2_reg_lambda)
+    Adam_optimizer = torch.optim.Adam(model.parameters(), lr=params.l2_reg_lambda)
 
     optimizer = Adam_optimizer
-
 
     # # logger = get_logger('log/CodeBERT/'+params.proj+".log")
     # starttime=time.time()
@@ -423,14 +413,18 @@ def train_model(data, params):
             msg_input_id, msg_input_mask, msg_segment_id, code_input_id, code_input_mask, code_segment_id, labels = batch
             if torch.cuda.is_available():
 
-                msg_input_id, msg_input_mask, code_input_id, code_input_mask, labels = torch.tensor(msg_input_id).cuda(), torch.tensor(msg_input_mask).cuda(), torch.tensor(code_input_id).cuda(), torch.tensor(
+                msg_input_id, msg_input_mask, code_input_id, code_input_mask, labels = torch.tensor(
+                    msg_input_id).cuda(), torch.tensor(msg_input_mask).cuda(), torch.tensor(
+                    code_input_id).cuda(), torch.tensor(
                     code_input_mask).cuda(), torch.cuda.FloatTensor(
                     labels.astype(int))
             else:
                 print("-------------- Something Wrong with your GPU!!! ------------------")
 
-                msg_input_id, msg_input_mask, code_input_id, code_input_mask, labels  = torch.tensor(msg_input_id).long(), torch.tensor(
-                    msg_input_mask).long(),torch.tensor(code_input_id).long(),torch.tensor(code_input_mask).long(), torch.tensor(
+                msg_input_id, msg_input_mask, code_input_id, code_input_mask, labels = torch.tensor(
+                    msg_input_id).long(), torch.tensor(
+                    msg_input_mask).long(), torch.tensor(code_input_id).long(), torch.tensor(
+                    code_input_mask).long(), torch.tensor(
                     labels).float()
 
             optimizer.zero_grad()
@@ -451,7 +445,8 @@ def train_model(data, params):
         save(model, params.save_dir, 'epoch', epoch, 'step', step)
     # logger.info("End training ")
     print("final loss : ", loss_res)
-    write_csv(params.save_loss_path,file_name='loss.csv', data=loss_res)
+    write_csv(params.save_loss_path, file_name='loss.csv', data=loss_res)
+
 
 def eval(labels, predicts, thresh=0.5):
     TP, FN, FP, TN = 0, 0, 0, 0
@@ -481,6 +476,7 @@ def eval(labels, predicts, thresh=0.5):
         # division by zero
         pass
     return (A, E, P, R)
+
 
 def evaluation_weight(data, params):
     # preprocess on the code and msg data
@@ -529,10 +525,12 @@ def evaluation_weight(data, params):
 
             if torch.cuda.is_available():
                 msg_input_id, msg_input_mask, code_input_id, code_input_mask, labels = torch.tensor(
-                    msg_input_id).cuda(), torch.tensor(msg_input_mask).cuda(), torch.tensor(code_input_id).cuda(), torch.tensor(
-                    code_input_mask).cuda(),  torch.cuda.FloatTensor(
+                    msg_input_id).cuda(), torch.tensor(msg_input_mask).cuda(), torch.tensor(
+                    code_input_id).cuda(), torch.tensor(
+                    code_input_mask).cuda(), torch.cuda.FloatTensor(
                     labels.astype(int))
-                sw_msg_input_id, sw_msg_input_mask, sw_code_input_id, sw_code_input_mask = msg_input_id, torch.zeros_like(msg_input_mask),  code_input_id, torch.zeros_like(code_input_mask)
+                sw_msg_input_id, sw_msg_input_mask, sw_code_input_id, sw_code_input_mask = msg_input_id, torch.zeros_like(
+                    msg_input_mask), code_input_id, torch.zeros_like(code_input_mask)
                 # print(type(sw_msg_input_id))
             else:
                 print('cpu')
@@ -566,6 +564,7 @@ def evaluation_weight(data, params):
         'Test data at Threshold 0.5 -- AUc: %.2f Accuracy: %.2f, False Positives: %.2f, Precision: %.2f, Recall: %.2f' % (
             auc_score_msg, A, E, P, R))
 
+
 def evaluation_model(data, params):
     # preprocess on the code and msg data
     pad_msg, pad_code, labels, dict_msg, dict_code = data
@@ -575,8 +574,6 @@ def evaluation_model(data, params):
     pad_msg_input_ids = np.array(pad_msg_input_ids)
     pad_msg_input_masks = np.array(pad_msg_input_masks)
     pad_msg_segment_ids = np.array(pad_msg_segment_ids)
-
-
 
     pad_code_input_ids = np.array(pad_code_input_ids)
     pad_code_input_masks = np.array(pad_code_input_masks)
@@ -617,7 +614,8 @@ def evaluation_model(data, params):
             msg_input_id, msg_input_mask, msg_segment_id, code_input_id, code_input_mask, code_segment_id, labels = batch
             if torch.cuda.is_available():
                 msg_input_id, msg_input_mask, code_input_id, code_input_mask, labels = torch.tensor(
-                    msg_input_id).cuda(), torch.tensor(msg_input_mask).cuda(), torch.tensor(code_input_id).cuda(), torch.tensor(
+                    msg_input_id).cuda(), torch.tensor(msg_input_mask).cuda(), torch.tensor(
+                    code_input_id).cuda(), torch.tensor(
                     code_input_mask).cuda(), torch.cuda.FloatTensor(
                     labels.astype(int))
 
@@ -627,7 +625,7 @@ def evaluation_model(data, params):
             if torch.cuda.is_available():
 
                 predict = model.forward(msg_input_id, msg_input_mask, code_input_id, code_input_mask,
-                                       )
+                                        )
                 predict = predict.cpu().detach().numpy().tolist()
             else:
 
@@ -643,19 +641,15 @@ def evaluation_model(data, params):
     # pickle.dump(data, open(tmp_path, 'wb'))
 
     # write_csv(data=all_predict, file_name='predict.csv', path_dir=params.load_model.replace('.pt', '/'))
-    A, E, P, R=eval(all_label, all_predict, thresh=0.5)
+    A, E, P, R = eval(all_label, all_predict, thresh=0.5)
     auc_score = roc_auc_score(y_true=all_label, y_score=all_predict)
     # print('Test data -- AUC score:', auc_score)
     return (auc_score, A, E, P, R)
 
 
-
 def one_softmax(x):
     """Compute softmax values for each sets of scores in x."""
     return x / np.sum(x, axis=0)
-
-
-
 
 
 if __name__ == '__main__':
@@ -674,7 +668,7 @@ if __name__ == '__main__':
         pad_msg = tokenization_for_codebert(data=msgs, max_length=params.msg_length, flag='msg', params=params)
         pad_code = tokenization_for_codebert(data=codes, max_length=params.code_length, flag='code', params=params)
 
-        data = (pad_msg, pad_code, np.array(labels),dict_msg, dict_code)
+        data = (pad_msg, pad_code, np.array(labels), dict_msg, dict_code)
         starttime = time.time()
         train_model(data=data, params=params)
         endtime = time.time()
@@ -702,7 +696,6 @@ if __name__ == '__main__':
         pad_code = tokenization_for_codebert(data=codes, max_length=params.code_length, flag='code', params=params)
         data = (pad_msg, pad_code, np.array(labels), dict_msg, dict_code)
 
-
         starttime = time.time()
         if params.weight:
             evaluation_weight(data=data, params=params)
@@ -716,8 +709,6 @@ if __name__ == '__main__':
         endtime = time.time()
         dtime = endtime - starttime
         print("程序运行时间：%.8s s" % dtime)  # 显示到微秒
-
-
 
         # # testing
         # if params.weight:

@@ -1,38 +1,33 @@
-path='../config_dataset/data/qt/cc2vec/qt_train.pkl'
+path = '../config_dataset/data/qt/cc2vec/qt_train.pkl'
 
-import pickle
+import argparse
+import csv
+import math
 import os
-import sys
+import pickle
+import random
+import time
+
+import numpy as np
+import torch
 import torch.nn as nn
 from peft import (
-    get_peft_config,
     get_peft_model,
-    get_peft_model_state_dict,
-    set_peft_model_state_dict,
     PeftType,
     PromptEncoderConfig,
 )
-
-
-
-
-
-from transformers import get_linear_schedule_with_warmup, set_seed,AutoTokenizer,AutoModelForSequenceClassification
 from tqdm import tqdm
-import numpy as np
-import math
-import os, torch
-import random
-import csv
-import argparse
-import time
+from transformers import get_linear_schedule_with_warmup, AutoTokenizer, AutoModelForSequenceClassification
+
 batch_size = 16
 from sklearn.metrics import roc_auc_score
+
 task = "mrpc"
 peft_type = PeftType.LORA
 device = "cuda"
 num_epochs = 10
-lr=1e-3
+lr = 1e-3
+
 
 def read_args():
     parser = argparse.ArgumentParser()
@@ -66,7 +61,6 @@ def read_args():
     parser.add_argument('-num_epochs', type=int, default=5, help='the number of epochs')
     parser.add_argument('-save-dir', type=str, default='p_tuning_roberta/test/qt', help='where to save the snapshot')
 
-
     # CUDA
     parser.add_argument('-device', type=int, default=-1,
                         help='device to use for iterate data, -1 mean cpu [default: -1]')
@@ -76,7 +70,9 @@ def read_args():
 
 
 ##最长512
-peft_config=PromptEncoderConfig(task_type="SEQ_CLS", num_virtual_tokens=20, encoder_hidden_size=128)
+peft_config = PromptEncoderConfig(task_type="SEQ_CLS", num_virtual_tokens=20, encoder_hidden_size=128)
+
+
 def read_pickle(path):
     with open(path, 'rb') as f:
         data = pickle.load(f)
@@ -86,6 +82,7 @@ def read_pickle(path):
 model_name_or_path = "microsoft/codebert-base"
 tokenizer_name_or_path = "microsoft/codebert-base"
 
+
 # model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, num_labels=2)
 # model=get_peft_model(model, peft_config)
 
@@ -93,7 +90,7 @@ def tokenize(path):
     data = read_pickle(path)
     ids, labels, msgs, codes = data
 
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path,padding_side='right')
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path, padding_side='right')
     if getattr(tokenizer, "pad_token_id") is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
     # msg_codes= [msgs[i] + ' ' + codes[i] for i in range(len(msgs))]
@@ -101,9 +98,10 @@ def tokenize(path):
     input_ids = encoding['input_ids']
     attention_mask = encoding['attention_mask']
 
-    return input_ids, attention_mask,labels
+    return input_ids, attention_mask, labels
 
-def write_csv(path_dir,file_name, data):
+
+def write_csv(path_dir, file_name, data):
     print('save loss in file: ', file_name)
     if not os.path.isdir(path_dir):
         os.makedirs(path_dir)
@@ -117,6 +115,7 @@ def write_csv(path_dir,file_name, data):
             writer = csv.writer(f)
             writer.writerow(data)
 
+
 def save(model, save_dir, save_prefix, epochs, step_, step):
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
@@ -126,14 +125,13 @@ def save(model, save_dir, save_prefix, epochs, step_, step):
     torch.save(model.state_dict(), save_path)
 
 
-
-def mini_batches_train(input_ids, input_masks,Y, mini_batch_size=64,seed=0):
+def mini_batches_train(input_ids, input_masks, Y, mini_batch_size=64, seed=0):
     m = Y.shape[0]  # number of training examples
     mini_batches = list()
     np.random.seed(seed)
 
     # Step 1: No shuffle (X, Y)
-    shuffled_X_input_ids, shuffled_X_masks, shuffled_Y = input_ids,input_masks, Y
+    shuffled_X_input_ids, shuffled_X_masks, shuffled_Y = input_ids, input_masks, Y
     Y = Y.tolist()
     Y_pos = [i for i in range(len(Y)) if Y[i] == 1]
     Y_neg = [i for i in range(len(Y)) if Y[i] == 0]
@@ -147,11 +145,9 @@ def mini_batches_train(input_ids, input_masks,Y, mini_batch_size=64,seed=0):
         mini_batch_X_msg_input_ids = shuffled_X_input_ids[indexes]
         mini_batch_X_msg_masks = shuffled_X_masks[indexes]
 
-
-
         mini_batch_Y = shuffled_Y[indexes]
         mini_batch = (
-        mini_batch_X_msg_input_ids, mini_batch_X_msg_masks, mini_batch_Y)
+            mini_batch_X_msg_input_ids, mini_batch_X_msg_masks, mini_batch_Y)
 
         mini_batches.append(mini_batch)
     return mini_batches
@@ -160,13 +156,10 @@ def mini_batches_train(input_ids, input_masks,Y, mini_batch_size=64,seed=0):
 def train_model(data, params):
     # preprocess on the code and msg data
 
-    pad_input_ids,pad_input_masks,data_labels = data
+    pad_input_ids, pad_input_masks, data_labels = data
     pad_input_ids = np.array(pad_input_ids)
     pad_input_masks = np.array(pad_input_masks)
     data_labels = np.array(data_labels)
-
-
-
 
     # set up parameters
     params.cuda = (not params.no_cuda) and torch.cuda.is_available()
@@ -187,7 +180,7 @@ def train_model(data, params):
         model.load_state_dict(torch.load(params.load_model))
 
     criterion = nn.BCELoss()
-    Adam_optimizer= torch.optim.AdamW(model.parameters(), lr=params.l2_reg_lambda)
+    Adam_optimizer = torch.optim.AdamW(model.parameters(), lr=params.l2_reg_lambda)
     optimizer = Adam_optimizer
     lr_scheduler = get_linear_schedule_with_warmup(
         optimizer=optimizer,
@@ -199,7 +192,6 @@ def train_model(data, params):
     # if params.optimizer == 'Adam':
     #     optimizer = Adam_optimizer
 
-
     # # logger = get_logger('log/CodeBERT/'+params.proj+".log")
     # starttime=time.time()
     # logger.info("training starting ")
@@ -210,13 +202,14 @@ def train_model(data, params):
         total_loss = 0
         step = 0
         # building batches for training model
-        batches = mini_batches_train(input_ids=pad_input_ids, input_masks=pad_input_masks,Y=data_labels, mini_batch_size=batch_size)
+        batches = mini_batches_train(input_ids=pad_input_ids, input_masks=pad_input_masks, Y=data_labels,
+                                     mini_batch_size=batch_size)
         for i, (batch) in enumerate(tqdm(batches)):
             step = step + 1
             msg_input_id, msg_input_mask, labels = batch
             if torch.cuda.is_available():
 
-                msg_input_id, msg_input_mask ,labels = torch.tensor(
+                msg_input_id, msg_input_mask, labels = torch.tensor(
                     msg_input_id).cuda(), torch.tensor(msg_input_mask).cuda(), torch.cuda.FloatTensor(
                     labels.astype(int))
             else:
@@ -228,9 +221,9 @@ def train_model(data, params):
 
             optimizer.zero_grad()
             # print(msg_input_id.size(), msg_input_mask.size(), labels.size())
-            predict=model(input_ids=msg_input_id, attention_mask=msg_input_mask)
+            predict = model(input_ids=msg_input_id, attention_mask=msg_input_mask)
             logits = predict.logits
-            #将[16,2]logits转化为概率[16,]
+            # 将[16,2]logits转化为概率[16,]
             predict = torch.softmax(logits, dim=1)[:, 1]
 
             loss = criterion(predict, labels)
@@ -248,10 +241,10 @@ def train_model(data, params):
         save(model, params.save_dir, 'epoch', epoch, 'step', step)
         model.save_pretrained(params.save_dir + '/epoch' + str(epoch))
 
-
     # logger.info("End training ")
     print("final loss : ", loss_res)
     # write_csv(params.save_loss_path,file_name='loss.csv', data=loss_res)
+
 
 def eval(labels, predicts, thresh=0.5):
     TP, FN, FP, TN = 0, 0, 0, 0
@@ -281,7 +274,9 @@ def eval(labels, predicts, thresh=0.5):
         # division by zero
         pass
     return (A, E, P, R)
-def mini_bacths_test(input_ids, input_masks, Y, mini_batch_size,seed=0):
+
+
+def mini_bacths_test(input_ids, input_masks, Y, mini_batch_size, seed=0):
     ''' for testing; put every data into it
         '''
 
@@ -289,23 +284,22 @@ def mini_bacths_test(input_ids, input_masks, Y, mini_batch_size,seed=0):
     mini_batches = list()
     np.random.seed(seed)
 
-    shuffled_X_input_ids, shuffled_X_input_masks, shuffled_Y =input_ids,input_masks, Y
+    shuffled_X_input_ids, shuffled_X_input_masks, shuffled_Y = input_ids, input_masks, Y
     num_complete_minibatches = int(math.floor(m / float(mini_batch_size))) + 1
 
     for k in range(0, num_complete_minibatches):
         mini_batch_X_input_ids = shuffled_X_input_ids[
-                                     k * mini_batch_size: k * mini_batch_size + mini_batch_size, :]
+                                 k * mini_batch_size: k * mini_batch_size + mini_batch_size, :]
         mini_batch_X_input_masks = shuffled_X_input_masks[k * mini_batch_size: k * mini_batch_size + mini_batch_size, :]
 
         if len(Y.shape) == 1:
             mini_batch_Y = shuffled_Y[k * mini_batch_size: k * mini_batch_size + mini_batch_size]
         else:
             mini_batch_Y = shuffled_Y[k * mini_batch_size: k * mini_batch_size + mini_batch_size, :]
-        mini_batch = (mini_batch_X_input_ids,mini_batch_X_input_masks, mini_batch_Y)
+        mini_batch = (mini_batch_X_input_ids, mini_batch_X_input_masks, mini_batch_Y)
         mini_batches.append(mini_batch)
 
     return mini_batches
-
 
 
 def evaluation_model(data, params):
@@ -318,15 +312,13 @@ def evaluation_model(data, params):
     data_labels = np.array(data_labels)
 
     # build batches
-    batches = mini_bacths_test(input_ids=pad_input_ids,input_masks= pad_input_masks, Y=data_labels, mini_batch_size=params.batch_size)
+    batches = mini_bacths_test(input_ids=pad_input_ids, input_masks=pad_input_masks, Y=data_labels,
+                               mini_batch_size=params.batch_size)
 
     # set up parameters
 
-
-
     # params.cuda = (not params.no_cuda) and torch.cuda.is_available()
     # del params.no_cuda
-
 
     model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, num_labels=2)
     model = get_peft_model(model, peft_config)
@@ -341,9 +333,9 @@ def evaluation_model(data, params):
         all_predict, all_label = list(), list()
         for i, (batch) in enumerate(tqdm(batches)):
 
-            msg_input_id, msg_input_mask,labels = batch
+            msg_input_id, msg_input_mask, labels = batch
             if torch.cuda.is_available():
-                msg_input_id, msg_input_mask,labels = torch.tensor(
+                msg_input_id, msg_input_mask, labels = torch.tensor(
                     msg_input_id).cuda(), torch.tensor(msg_input_mask).cuda(), torch.cuda.FloatTensor(
                     labels.astype(int))
 
@@ -352,7 +344,7 @@ def evaluation_model(data, params):
 
             if torch.cuda.is_available():
 
-                predict =model(input_ids=msg_input_id, attention_mask=msg_input_mask)
+                predict = model(input_ids=msg_input_id, attention_mask=msg_input_mask)
                 logits = predict.logits
                 # 将[16,2]logits转化为概率[16,]
                 predict = torch.softmax(logits, dim=1)[:, 1]
@@ -365,7 +357,7 @@ def evaluation_model(data, params):
             all_label += labels.tolist()
 
     # compute the AUC scores
-    A, E, P, R=eval(all_label, all_predict, thresh=0.5)
+    A, E, P, R = eval(all_label, all_predict, thresh=0.5)
     auc_score = roc_auc_score(y_true=all_label, y_score=all_predict)
     # print('Test data -- AUC score:', auc_score)
     return (auc_score, A, E, P, R)
@@ -376,14 +368,11 @@ def one_softmax(x):
     return x / np.sum(x, axis=0)
 
 
-
-
-
 if __name__ == '__main__':
     params = read_args().parse_args()
     if params.train is True:
-        path=params.train_data
-        data=tokenize(path)
+        path = params.train_data
+        data = tokenize(path)
         starttime = time.time()
         train_model(data=data, params=params)
         endtime = time.time()
@@ -410,8 +399,6 @@ if __name__ == '__main__':
         endtime = time.time()
         dtime = endtime - starttime
         print("程序运行时间：%.8s s" % dtime)  # 显示到微秒
-
-
 
         # # testing
         # if params.weight:
