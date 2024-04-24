@@ -371,27 +371,27 @@ def train_model(data, params):
     print("pad_code_input_masks", pad_code_input_masks.shape)
 
     # set up parameters
-    params.cuda = (not params.no_cuda) and torch.cuda.is_available()
-    del params.no_cuda
-    params.filter_sizes = [int(k) for k in params.filter_sizes.split(',')]
+    params['cuda'] = (not params['no_cuda']) and torch.cuda.is_available()
+    # del params.no_cuda
+    params['filter_sizes'] = [int(k) for k in params['filter_sizes'].split(',')]
     # params.save_dir = os.path.join(params.save_dir, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    params.vocab_msg, params.vocab_code = len(dict_msg), len(dict_code)
+    params['vocab_msg'], params['vocab_code'] = len(dict_msg), len(dict_code)
 
     if len(data_labels.shape) == 1:
-        params.class_num = 1
+        params['class_num'] = 1
     else:
-        params.class_num = data_labels.shape[1]
+        params['class_num'] = data_labels.shape[1]
     # params.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # create and train the defect model
     model = BART4JIT(args=params)
     if torch.cuda.is_available():
         model = model.cuda()
-    if params.load_model != None:
-        model.load_state_dict(torch.load(params.load_model))
+    if params['load_model'] != None:
+        model.load_state_dict(torch.load(params['load_model']))
 
     criterion = nn.BCELoss()
-    Adam_optimizer = torch.optim.Adam(model.parameters(), lr=params.l2_reg_lambda)
+    Adam_optimizer = torch.optim.Adam(model.parameters(), lr=params['l2_reg_lambda'])
 
     optimizer = Adam_optimizer
 
@@ -400,14 +400,14 @@ def train_model(data, params):
     # logger.info("training starting ")
     ## --------------- Training process ------------------ ##
     loss_res = []
-    for epoch in range(1, params.num_epochs + 1):
+    for epoch in range(1, params['num_epochs'] + 1):
         total_loss = 0
         step = 0
         # building batches for training model
         batches = mini_batches_updated(X_msg_input_ids=pad_msg_input_ids, X_msg_masks=pad_msg_input_masks,
                                        X_msg_segment_ids=pad_msg_segment_ids, X_code_input_ids=pad_code_input_ids,
                                        X_code_masks=pad_code_input_masks, X_code_segment_ids=pad_code_segment_ids,
-                                       Y=data_labels, mini_batch_size=params.batch_size)
+                                       Y=data_labels, mini_batch_size=params['batch_size'])
         for i, (batch) in enumerate(tqdm(batches)):
             step = step + 1
             msg_input_id, msg_input_mask, msg_segment_id, code_input_id, code_input_mask, code_segment_id, labels = batch
@@ -436,16 +436,16 @@ def train_model(data, params):
             loss.backward()
             optimizer.step()
             if step % 100 == 0:
-                print('Epoch %i / %i  the step %i-- Total loss: %f' % (epoch, params.num_epochs, step, total_loss))
+                print('Epoch %i / %i  the step %i-- Total loss: %f' % (epoch, params['num_epochs'], step, total_loss))
                 # endtime=time.time()
                 # dtime=endtime-starttime
                 # logger.info('Epoch:[{}]\t loss={:.5f}\t time={:.3f}'.format(epoch, total_loss/150.0,dtime ))
                 loss_res.append(total_loss.item())
                 total_loss = 0
-        save(model, params.save_dir, 'epoch', epoch, 'step', step)
+        save(model, params['save_dir'], 'epoch', epoch, 'step', step)
     # logger.info("End training ")
     print("final loss : ", loss_res)
-    write_csv(params.save_loss_path, file_name='loss.csv', data=loss_res)
+    write_csv(params['save_loss_path'], file_name='loss.csv', data=loss_res)
 
 
 def eval(labels, predicts, thresh=0.5):
@@ -496,22 +496,22 @@ def evaluation_weight(data, params):
     batches = mini_batches(X_msg_input_ids=pad_msg_input_ids, X_msg_masks=pad_msg_input_masks,
                            X_msg_segment_ids=pad_msg_segment_ids, X_code_input_ids=pad_code_input_ids,
                            X_code_masks=pad_code_input_masks, X_code_segment_ids=pad_code_segment_ids, Y=labels,
-                           mini_batch_size=params.batch_size)
-    params.vocab_msg, params.vocab_code = len(dict_msg), len(dict_code)
+                           mini_batch_size=params['batch_size'])
+    params['vocab_msg'], params['vocab_code'] = len(dict_msg), len(dict_code)
     if len(labels.shape) == 1:
-        params.class_num = 1
+        params['class_num'] = 1
     else:
-        params.class_num = labels.shape[1]
+        params['class_num'] = labels.shape[1]
 
     # set up parameters
-    params.cuda = (not params.no_cuda) and torch.cuda.is_available()
-    del params.no_cuda
-    params.filter_sizes = [int(k) for k in params.filter_sizes.split(',')]
+    params['cuda'] = (not params['no_cuda']) and torch.cuda.is_available()
+    # del params.no_cuda
+    params['filter_sizes'] = [int(k) for k in params['filter_sizes'].split(',')]
 
     model = BART4JIT(args=params)
     if torch.cuda.is_available():
         model = model.cuda()
-    model.load_state_dict(torch.load(params.load_model))
+    model.load_state_dict(torch.load(params['load_model']))
 
     model.eval()  # eval mode (batchnorm uses moving mean/variance instead of mini-batch mean/variance)
     with torch.no_grad():
@@ -583,27 +583,27 @@ def evaluation_model(data, params):
     batches = mini_batches(X_msg_input_ids=pad_msg_input_ids, X_msg_masks=pad_msg_input_masks,
                            X_msg_segment_ids=pad_msg_segment_ids, X_code_input_ids=pad_code_input_ids,
                            X_code_masks=pad_code_input_masks, X_code_segment_ids=pad_code_segment_ids, Y=labels,
-                           mini_batch_size=params.batch_size)
+                           mini_batch_size=params['batch_size'])
 
     # set up parameters
 
     if len(labels.shape) == 1:
-        params.class_num = 1
+        params['class_num'] = 1
     else:
-        params.class_num = labels.shape[1]
+        params['class_num'] = labels.shape[1]
 
-    params.vocab_msg, params.vocab_code = len(dict_msg), len(dict_code)
-    params.cuda = (not params.no_cuda) and torch.cuda.is_available()
-    del params.no_cuda
-    params.filter_sizes = [int(k) for k in params.filter_sizes.split(',')]
+    params['vocab_msg'], params['vocab_code'] = len(dict_msg), len(dict_code)
+    params['cuda'] = (not params['no_cuda']) and torch.cuda.is_available()
+    # del params.no_cuda
+    params['filter_sizes'] = [int(k) for k in params['filter_sizes'].split(',')]
 
     model = BART4JIT(args=params)
     if torch.cuda.is_available():
         model = model.cuda()
-    if params.zero_shot:
+    if params['zero_shot']:
         print("evaluating zero-shot model")
     else:
-        model.load_state_dict(torch.load(params.load_model))
+        model.load_state_dict(torch.load(params['load_model']))
 
     ## ---------------------- Evalaution Process ---------------------------- ##
     model.eval()  # eval mode
@@ -654,19 +654,19 @@ def one_softmax(x):
 
 if __name__ == '__main__':
     params = read_args().parse_args()
-    if params.train is True:
-        dictionary = pickle.load(open(params.dictionary_data, 'rb'))
+    if params['train'] is True:
+        dictionary = pickle.load(open(params['dictionary_data'], 'rb'))
         dict_msg, dict_code = dictionary
 
-        data = pickle.load(open(params.train_data, 'rb'))
+        data = pickle.load(open(params['train_data'], 'rb'))
 
         ids, labels, msgs, codes = data
         data_len = len(ids)
 
         print(len(codes), len(ids))
 
-        pad_msg = tokenization_for_codebert(data=msgs, max_length=params.msg_length, flag='msg', params=params)
-        pad_code = tokenization_for_codebert(data=codes, max_length=params.code_length, flag='code', params=params)
+        pad_msg = tokenization_for_codebert(data=msgs, max_length=params['msg_length'], flag='msg', params=params)
+        pad_code = tokenization_for_codebert(data=codes, max_length=params['code_length'], flag='code', params=params)
 
         data = (pad_msg, pad_code, np.array(labels), dict_msg, dict_code)
         starttime = time.time()
@@ -680,24 +680,24 @@ if __name__ == '__main__':
 
 
 
-    elif params.predict is True:
+    elif params['predict'] is True:
         print("predicting lora-codebert model")
-        dictionary = pickle.load(open(params.dictionary_data, 'rb'))
+        dictionary = pickle.load(open(params['dictionary_data'], 'rb'))
         dict_msg, dict_code = dictionary
 
-        data = pickle.load(open(params.pred_data, 'rb'))
+        data = pickle.load(open(params['pred_data'], 'rb'))
 
         ids, labels, msgs, codes = data
         data_len = len(ids)
 
         print(len(codes), len(ids))
         # tokenize the code and msg
-        pad_msg = tokenization_for_codebert(data=msgs, max_length=params.msg_length, flag='msg', params=params)
-        pad_code = tokenization_for_codebert(data=codes, max_length=params.code_length, flag='code', params=params)
+        pad_msg = tokenization_for_codebert(data=msgs, max_length=params['msg_length'], flag='msg', params=params)
+        pad_code = tokenization_for_codebert(data=codes, max_length=params['code_length'], flag='code', params=params)
         data = (pad_msg, pad_code, np.array(labels), dict_msg, dict_code)
 
         starttime = time.time()
-        if params.weight:
+        if params['weight']:
             evaluation_weight(data=data, params=params)
         else:
             auc_score, A, E, P, R = evaluation_model(data=data, params=params)
